@@ -1,7 +1,0 @@
-{
-  "refresh_interval": 1.0,
-  "theme": "dark",
-  "units": "binary",
-  "auto_export": false,
-  "export_format": "json"
-}
