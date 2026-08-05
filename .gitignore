@@ -1,22 +1,44 @@
-# Virtual Environment
+# ─── Virtual Environments (anywhere in the repo) ──────────────────────────────
 venv/
+.venv/
 env/
 ENV/
 
-# Byte-compiled / optimized / DLL files
+# ─── Python Cache ─────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+*.pyo
 
-# Testing & Coverage
+# ─── Testing & Coverage ───────────────────────────────────────────────────────
 .pytest_cache/
+.coverage
+htmlcov/
 
-# IDE & OS files
+# ─── IDE & Editor Files ───────────────────────────────────────────────────────
 .vscode/
 .idea/
-.DS_Store
+*.swp
+*.swo
 
-# Generated logs & exports
+# ─── macOS System Files ───────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ─── Windows System Files ─────────────────────────────────────────────────────
+Thumbs.db
+Desktop.ini
+
+# ─── Generated Logs & Exports ─────────────────────────────────────────────────
 logs/
 exports/
 *.log
+
+# ─── Zip / Archive Junk ───────────────────────────────────────────────────────
+*.zip
+__MACOSX/
+
+# ─── Personal / Private Files (not for GitHub) ────────────────────────────────
+video_script.txt
