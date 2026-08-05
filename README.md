@@ -95,7 +95,7 @@ This repository contains two separate versions optimised for each platform:
 
 ```bash
 # Clone & go to mac version
-git clone https://github.com/mrutyunjay11/CS50P_Final_Project.git
+git clone https://github.com/mrutyunjay11/terminal-system-dashboard-pro.git
 cd CS50P_Final_Project/mac_version
 
 # Set up virtual environment
@@ -115,7 +115,7 @@ python project.py
 
 ```bash
 # Clone & go to Windows/Linux version
-git clone https://github.com/mrutyunjay11/CS50P_Final_Project.git
+git clone https://github.com/mrutyunjay11/terminal-system-dashboard-pro.git
 cd CS50P_Final_Project/windows_linux_version
 
 # Set up virtual environment
@@ -137,7 +137,7 @@ python project.py
 
 ```bash
 # Clone & go to Windows/Linux version
-git clone https://github.com/mrutyunjay11/CS50P_Final_Project.git
+git clone https://github.com/mrutyunjay11/terminal-system-dashboard-pro.git
 cd CS50P_Final_Project/windows_linux_version
 
 # Set up virtual environment

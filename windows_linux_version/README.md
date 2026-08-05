@@ -57,7 +57,7 @@ This is the **Windows & Linux version**, supporting Windows 10/11 (via `msvcrt` 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/mrutyunjay11/CS50P_Final_Project.git
+git clone https://github.com/mrutyunjay11/terminal-system-dashboard-pro.git
 cd CS50P_Final_Project/windows_linux_version
 
 # 2. Create a virtual environment
@@ -85,7 +85,7 @@ python project.py
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/mrutyunjay11/CS50P_Final_Project.git
+git clone https://github.com/mrutyunjay11/terminal-system-dashboard-pro.git
 cd CS50P_Final_Project/windows_linux_version
 
 # 2. Create a virtual environment

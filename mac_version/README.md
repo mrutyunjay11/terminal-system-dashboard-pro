@@ -49,7 +49,7 @@ This is the **macOS version**, optimised for both **Apple Silicon** (M1, M2, M3,
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/mrutyunjay11/CS50P_Final_Project.git
+git clone https://github.com/mrutyunjay11/terminal-system-dashboard-pro.git
 cd CS50P_Final_Project/mac_version
 
 # 2. Create a virtual environment
