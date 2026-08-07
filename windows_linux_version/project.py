@@ -254,21 +254,6 @@ def main() -> None:
         # Visual startup animation
         print(ASCII_LOGO)
 
-        # Cache sudo credentials for die-level temperature reading (Apple Silicon)
-        if sys.platform == "darwin" and platform.machine() == "arm64":
-            print("Requesting sudo access for CPU/GPU die temperature sensors...")
-            print("(Enter your password below — this enables thermal monitoring)")
-            print()
-            sudo_result = subprocess.run(
-                ["sudo", "-v"],
-                timeout=60,
-            )
-            if sudo_result.returncode == 0:
-                print("\nSudo access granted. Die temperatures will be available.")
-            else:
-                print("\nSudo not granted. Using battery sensor fallback for temperature.")
-            print()
-
         print("Initializing monitoring sensors...")
         time.sleep(0.5)
 

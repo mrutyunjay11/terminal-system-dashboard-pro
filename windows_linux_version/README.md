@@ -34,11 +34,14 @@ This is the **Windows & Linux version**, supporting Windows 10/11 (via `msvcrt` 
 
 ## ✨ All Features
 
-- **CPU** — Model, architecture, core counts, per-core usage bars, frequency, thermal pressure state
+- **CPU** — Model, architecture, core counts, per-core usage bars, frequency, temperature (psutil / WMI)
+- **CPU Power** — Real-time power draw via Intel RAPL (Linux only)
+- **GPU** — NVIDIA GPU name, temperature, load %, VRAM usage, power draw via GPUtil + nvidia-smi
 - **Memory** — RAM and Swap with human-readable units
 - **Disk** — All partitions with live read/write I/O speeds
 - **Network** — IP, connectivity, upload/download speeds, total transfer, background speedtest
 - **Battery** — Charge %, charging state, time remaining (on laptops)
+- **Battery Diagnostics** — Cycle count, wear level, voltage, current, design/actual capacity (Linux via `/sys/`)
 - **Processes** — Top 10 by CPU and top 10 by Memory (PID, name, resource usage)
 - **5 Themes** — `dark`, `light`, `cyberpunk`, `matrix`, `ocean`
 - **Export** — JSON, CSV, or TXT snapshot
@@ -148,8 +151,8 @@ windows_linux_version/
 ├── test_project.py     ← 15 pytest tests
 ├── dashboard.py        ← Rich TUI layout, live loop, msvcrt (Win) / termios (Linux) keyboard
 ├── monitor.py          ← Orchestrates all collectors into SystemState
-├── cpu.py              ← CPU metrics via psutil
-├── battery.py          ← Battery status & health
+├── cpu.py              ← CPU + NVIDIA GPU metrics (psutil, GPUtil, RAPL, WMI)
+├── battery.py          ← Battery status, health, Linux /sys diagnostics
 ├── memory.py           ← RAM & Swap
 ├── disk.py             ← Partitions & I/O speed
 ├── network.py          ← Network stats & speedtest thread
@@ -159,8 +162,7 @@ windows_linux_version/
 ├── config.py           ← AppConfig dataclass & logging setup
 ├── utils.py            ← format_bytes(), uptime(), safe_execute(), etc.
 ├── config.json         ← Default settings
-├── requirements.txt    ← pip dependencies
-└── video_script.txt    ← Demo video script
+└── requirements.txt    ← pip dependencies
 ```
 
 ---
@@ -182,6 +184,8 @@ pytest test_project.py
 | Colors not showing on Windows | Use **Windows Terminal**, not `cmd.exe` |
 | `ModuleNotFoundError` | Run `pip install -r requirements.txt` inside your venv |
 | Battery shows `N/A` on Linux | Install `lm-sensors` — see notes above |
+| GPU not detected | Ensure NVIDIA drivers + `nvidia-smi` are installed; AMD GPUs are not yet supported |
+| CPU power shows N/A | Only available on Linux with Intel RAPL; requires read access to `/sys/class/powercap/` |
 | Process details missing | Run as Administrator (Windows) or `sudo` (Linux) |
 | Speedtest slow or fails | Check internet connection; speedtest runs in background |
 

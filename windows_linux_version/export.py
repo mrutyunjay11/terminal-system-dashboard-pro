@@ -1,5 +1,5 @@
 """
-Report export module for the Terminal System Dashboard Pro.
+Report export module for the Terminal System Dashboard Pro (Windows & Linux).
 Supports exporting SystemState models to JSON, CSV, and formatted text documents.
 """
 
@@ -118,37 +118,31 @@ class Exporter:
             f"  Architecture   : {state.cpu.architecture}",
             f"  Physical Cores : {state.cpu.physical_cores}",
             f"  Logical Cores  : {state.cpu.logical_cores}",
-        ]
-
-        if state.cpu.performance_cores is not None:
-            lines.append(f"  Perf Cores (P) : {state.cpu.performance_cores}")
-        if state.cpu.efficiency_cores is not None:
-            lines.append(f"  Eff Cores (E)  : {state.cpu.efficiency_cores}")
-        if state.cpu.gpu_cores is not None:
-            lines.append(f"  GPU Cores      : {state.cpu.gpu_cores}")
-        if state.cpu.npu_cores is not None:
-            lines.append(f"  Neural Engine  : {state.cpu.npu_cores}-core")
-
-        lines.extend([
             f"  Overall Load   : {state.cpu.usage_overall:.1f}%",
             f"  Current Freq   : {state.cpu.frequency_current:.1f} MHz (Max: {state.cpu.frequency_max:.1f} MHz)",
-        ])
+        ]
 
         temp_str = f"{state.cpu.temperature:.1f} °C" if state.cpu.temperature else "N/A"
-        lines.append(f"  Board Temp     : {temp_str}")
-
-        cpu_die_str = f"{state.cpu.cpu_die_temp:.1f} °C" if state.cpu.cpu_die_temp is not None else "N/A"
-        gpu_die_str = f"{state.cpu.gpu_die_temp:.1f} °C" if state.cpu.gpu_die_temp is not None else "N/A"
-        hotspot_str = f"{state.cpu.hotspot_temp:.1f} °C" if state.cpu.hotspot_temp is not None else "N/A"
-        lines.append(f"  CPU Die Temp   : {cpu_die_str}")
-        lines.append(f"  GPU Die Temp   : {gpu_die_str}")
-        lines.append(f"  Hotspot Temp   : {hotspot_str}")
+        lines.append(f"  CPU Temp       : {temp_str}")
         
         cpu_power_str = f"{state.cpu.cpu_power_w:.2f} W" if state.cpu.cpu_power_w is not None else "N/A"
-        gpu_power_str = f"{state.cpu.gpu_power_w:.2f} W" if state.cpu.gpu_power_w is not None else "N/A"
         lines.append(f"  CPU Power Draw : {cpu_power_str}")
-        lines.append(f"  GPU Power Draw : {gpu_power_str}")
         lines.append(f"  Thermal State  : {state.cpu.thermal_pressure}")
+
+        # GPU Info
+        if state.cpu.gpu_name is not None:
+            lines.append("")
+            lines.append("[GPU INFORMATION (NVIDIA)]")
+            lines.append(f"  GPU Name       : {state.cpu.gpu_name}")
+            gpu_temp_str = f"{state.cpu.gpu_temp:.1f} °C" if state.cpu.gpu_temp is not None else "N/A"
+            lines.append(f"  GPU Temp       : {gpu_temp_str}")
+            gpu_load_str = f"{state.cpu.gpu_load:.1f}%" if state.cpu.gpu_load is not None else "N/A"
+            lines.append(f"  GPU Load       : {gpu_load_str}")
+            if state.cpu.gpu_memory_used is not None and state.cpu.gpu_memory_total is not None:
+                lines.append(f"  GPU VRAM Used  : {state.cpu.gpu_memory_used:.0f} / {state.cpu.gpu_memory_total:.0f} MB")
+            gpu_power_str = f"{state.cpu.gpu_power_w:.1f} W" if state.cpu.gpu_power_w is not None else "N/A"
+            lines.append(f"  GPU Power Draw : {gpu_power_str}")
+
         lines.append("")
 
         lines.extend([
@@ -207,12 +201,6 @@ class Exporter:
             ])
             if state.battery.temperature is not None:
                 lines.append(f"  Temperature    : {state.battery.temperature:.1f} °C")
-            if state.battery.virtual_temperature is not None:
-                lines.append(f"  Virtual Temp   : {state.battery.virtual_temperature:.1f} °C")
-            if state.battery.max_lifetime_temp is not None:
-                lines.append(f"  Max Lifetime   : {state.battery.max_lifetime_temp:.0f} °C")
-            if state.battery.min_lifetime_temp is not None:
-                lines.append(f"  Min Lifetime   : {state.battery.min_lifetime_temp:.0f} °C")
             if state.battery.cycle_count is not None:
                 lines.append(f"  Cycle Count    : {state.battery.cycle_count}")
             if state.battery.wear_level_pct is not None:
@@ -221,6 +209,10 @@ class Exporter:
                 lines.append(f"  Voltage        : {state.battery.voltage_v:.2f} V")
             if state.battery.amperage_ma is not None:
                 lines.append(f"  Amperage       : {state.battery.amperage_ma:.0f} mA")
+            if state.battery.design_capacity is not None:
+                lines.append(f"  Design Cap     : {state.battery.design_capacity} mAh")
+            if state.battery.nominal_capacity is not None:
+                lines.append(f"  Current Cap    : {state.battery.nominal_capacity} mAh")
         else:
             lines.append("  No Battery Detected")
 
@@ -265,20 +257,20 @@ class Exporter:
             "CPU_Architecture": state.cpu.architecture,
             "CPU_PhysicalCores": state.cpu.physical_cores,
             "CPU_LogicalCores": state.cpu.logical_cores,
-            "CPU_PerformanceCores": state.cpu.performance_cores if state.cpu.performance_cores is not None else "N/A",
-            "CPU_EfficiencyCores": state.cpu.efficiency_cores if state.cpu.efficiency_cores is not None else "N/A",
-            "CPU_GPUCores": state.cpu.gpu_cores if state.cpu.gpu_cores is not None else "N/A",
-            "CPU_NeuralEngineCores": state.cpu.npu_cores if state.cpu.npu_cores is not None else "N/A",
             "CPU_UsageOverall_Pct": state.cpu.usage_overall,
             "CPU_FreqCurrent_MHz": state.cpu.frequency_current,
             "CPU_FreqMax_MHz": state.cpu.frequency_max,
             "CPU_Temperature_C": state.cpu.temperature if state.cpu.temperature is not None else "N/A",
-            "CPU_DieTemp_C": state.cpu.cpu_die_temp if state.cpu.cpu_die_temp is not None else "N/A",
-            "GPU_DieTemp_C": state.cpu.gpu_die_temp if state.cpu.gpu_die_temp is not None else "N/A",
-            "CPU_HotspotTemp_C": state.cpu.hotspot_temp if state.cpu.hotspot_temp is not None else "N/A",
             "CPU_Power_W": state.cpu.cpu_power_w if state.cpu.cpu_power_w is not None else "N/A",
-            "GPU_Power_W": state.cpu.gpu_power_w if state.cpu.gpu_power_w is not None else "N/A",
             "CPU_ThermalPressure": state.cpu.thermal_pressure,
+
+            # GPU (NVIDIA)
+            "GPU_Name": state.cpu.gpu_name if state.cpu.gpu_name is not None else "N/A",
+            "GPU_Temperature_C": state.cpu.gpu_temp if state.cpu.gpu_temp is not None else "N/A",
+            "GPU_Load_Pct": state.cpu.gpu_load if state.cpu.gpu_load is not None else "N/A",
+            "GPU_MemoryUsed_MB": state.cpu.gpu_memory_used if state.cpu.gpu_memory_used is not None else "N/A",
+            "GPU_MemoryTotal_MB": state.cpu.gpu_memory_total if state.cpu.gpu_memory_total is not None else "N/A",
+            "GPU_Power_W": state.cpu.gpu_power_w if state.cpu.gpu_power_w is not None else "N/A",
             
             "RAM_Total_Bytes": state.memory.ram_total,
             "RAM_Used_Bytes": state.memory.ram_used,
@@ -321,15 +313,11 @@ class Exporter:
             res["Battery_TimeRemaining"] = state.battery.time_remaining_str
             res["Battery_Health"] = state.battery.health
             res["Battery_Temperature_C"] = state.battery.temperature if state.battery.temperature is not None else "N/A"
-            res["Battery_VirtualTemperature_C"] = state.battery.virtual_temperature if state.battery.virtual_temperature is not None else "N/A"
-            res["Battery_MaxLifetimeTemp_C"] = state.battery.max_lifetime_temp if state.battery.max_lifetime_temp is not None else "N/A"
-            res["Battery_MinLifetimeTemp_C"] = state.battery.min_lifetime_temp if state.battery.min_lifetime_temp is not None else "N/A"
             res["Battery_CycleCount"] = state.battery.cycle_count if state.battery.cycle_count is not None else "N/A"
             res["Battery_DesignCapacity_mAh"] = state.battery.design_capacity if state.battery.design_capacity is not None else "N/A"
             res["Battery_NominalCapacity_mAh"] = state.battery.nominal_capacity if state.battery.nominal_capacity is not None else "N/A"
             res["Battery_WearLevel_Pct"] = state.battery.wear_level_pct if state.battery.wear_level_pct is not None else "N/A"
             res["Battery_Voltage_V"] = state.battery.voltage_v if state.battery.voltage_v is not None else "N/A"
             res["Battery_Amperage_mA"] = state.battery.amperage_ma if state.battery.amperage_ma is not None else "N/A"
-            res["Battery_IsFailed"] = state.battery.is_failed if state.battery.is_failed is not None else "N/A"
 
         return res

@@ -1,13 +1,12 @@
 """
 Battery metrics collection module for the Terminal System Dashboard Pro.
 Monitors battery state of charge, power source, remaining runtime, and detailed diagnostics.
+Designed for Windows and Linux systems.
 """
 
 import os
 import sys
-import re
 import logging
-import subprocess
 import psutil
 from dataclasses import dataclass
 from typing import Optional
@@ -27,7 +26,7 @@ class BatteryData:
     secsleft: int
     charging: bool
     time_remaining_str: str
-    health: Optional[str] = "N/A"
+    health: Optional[str] = 'N/A'
     temperature: Optional[float] = None
     virtual_temperature: Optional[float] = None
     max_lifetime_temp: Optional[float] = None
@@ -45,73 +44,102 @@ class BatteryData:
 class BatteryCollector:
     """
     Retrieves system power levels and charging state via platform hardware abstraction.
-    On macOS/Darwin, queries AppleSmartBattery via ioreg for detailed diagnostics.
+    On Linux, queries /sys/class/power_supply for detailed diagnostics.
+    On Windows, uses psutil with placeholder for detailed diagnostics.
     """
 
     def __init__(self) -> None:
         """Initialize the Battery Collector."""
         logger.info("Initializing Battery Collector...")
 
-    def _fetch_macos_battery_details(self) -> dict:
+    def _fetch_linux_battery_details(self) -> dict:
         """
-        Run ioreg and parse detailed battery metrics on macOS.
+        Read detailed battery metrics from /sys/class/power_supply on Linux.
 
         Returns:
             dict: Parsed battery properties.
         """
         details = {}
-        if sys.platform != "darwin":
+        if sys.platform != "linux":
             return details
 
-        try:
-            result = subprocess.run(
-                ["ioreg", "-rc", "AppleSmartBattery"],
-                capture_output=True, text=True, timeout=3
-            )
-            if result.returncode != 0:
-                return details
+        sys_power = "/sys/class/power_supply"
+        bat_path = None
+        if os.path.exists(os.path.join(sys_power, "BAT0")):
+            bat_path = os.path.join(sys_power, "BAT0")
+        elif os.path.exists(os.path.join(sys_power, "BAT1")):
+            bat_path = os.path.join(sys_power, "BAT1")
+        
+        if not bat_path:
+            return details
 
-            text = result.stdout
+        def read_sys_file(filename: str, is_float: bool = False, divide: float = 1.0):
+            filepath = os.path.join(bat_path, filename)
+            try:
+                if os.path.exists(filepath):
+                    with open(filepath, 'r') as f:
+                        val = f.read().strip()
+                        if not val:
+                            return None
+                        if is_float:
+                            return round(float(val) / divide, 2)
+                        else:
+                            return int(int(val) / divide)
+            except Exception as e:
+                logger.debug("Failed to read %s: %s", filename, e)
+            return None
 
-            def search_val(pattern, is_float=False, divide=1.0):
-                m = re.search(pattern, text)
-                if m:
-                    val = float(m.group(1)) if is_float else int(m.group(1))
-                    return round(val / divide, 2) if is_float else val
-                return None
+        def read_sys_str(filename: str) -> Optional[str]:
+            filepath = os.path.join(bat_path, filename)
+            try:
+                if os.path.exists(filepath):
+                    with open(filepath, 'r') as f:
+                        return f.read().strip()
+            except Exception as e:
+                logger.debug("Failed to read %s: %s", filename, e)
+            return None
 
-            details["temperature"] = search_val(r'\"Temperature\" = (\d+)', is_float=True, divide=100.0)
-            details["virtual_temperature"] = search_val(r'\"VirtualTemperature\" = (\d+)', is_float=True, divide=100.0)
-            details["cycle_count"] = search_val(r'\"CycleCount\" = (\d+)')
-            details["design_capacity"] = search_val(r'\"DesignCapacity\" = (\d+)')
-            details["nominal_capacity"] = search_val(r'\"NominalChargeCapacity\" = (\d+)')
-            details["max_capacity_pct"] = search_val(r'\"MaxCapacity\" = (\d+)')
-            
-            failed = search_val(r'\"PermanentFailureStatus\" = (\d+)')
-            if failed is not None:
-                details["is_failed"] = failed != 0
+        details["cycle_count"] = read_sys_file("cycle_count")
 
-            details["voltage_v"] = search_val(r'\"Voltage\" = (\d+)', is_float=True, divide=1000.0)
+        # Try charge_full_design or energy_full_design
+        design = read_sys_file("charge_full_design", divide=1000.0)
+        if design is None:
+            design = read_sys_file("energy_full_design", divide=1000.0)
+        details["design_capacity"] = design
 
-            amp = search_val(r'\"Amperage\" = (\d+)')
-            if amp is not None:
-                if amp > 2**63:
-                    amp -= 2**64
-                details["amperage_ma"] = float(amp)
+        # Try charge_full or energy_full
+        nominal = read_sys_file("charge_full", divide=1000.0)
+        if nominal is None:
+            nominal = read_sys_file("energy_full", divide=1000.0)
+        details["nominal_capacity"] = nominal
 
-            details["max_lifetime_temp"] = search_val(r'\"MaximumTemperature\"=(\d+)', is_float=True)
-            details["min_lifetime_temp"] = search_val(r'\"MinimumTemperature\"=(\d+)', is_float=True)
+        details["voltage_v"] = read_sys_file("voltage_now", is_float=True, divide=1000000.0)
 
-            if details.get("nominal_capacity") and details.get("design_capacity"):
-                nom = details["nominal_capacity"]
-                des = details["design_capacity"]
-                if des > 0:
-                    details["wear_level_pct"] = round((1.0 - (nom / des)) * 100.0, 1)
+        current = read_sys_file("current_now", divide=1000.0)
+        status = read_sys_str("status")
 
-        except Exception as e:
-            logger.debug("Failed parsing macOS ioreg battery details: %s", e)
+        if current is not None:
+            if status == "Discharging":
+                details["amperage_ma"] = -float(current)
+            else:
+                details["amperage_ma"] = float(current)
+
+        details["temperature"] = read_sys_file("temp", is_float=True, divide=10.0)
+
+        if nominal is not None and design is not None and design > 0:
+            details["max_capacity_pct"] = int((nominal / design) * 100)
+            details["wear_level_pct"] = round((1.0 - (nominal / design)) * 100.0, 1)
 
         return details
+
+    def _fetch_windows_battery_details(self) -> dict:
+        """
+        Placeholder for future Windows detailed battery metrics.
+        
+        Returns:
+            dict: Empty dictionary as Windows does not easily expose these via simple APIs.
+        """
+        return {}
 
     def collect(self) -> BatteryData:
         """
@@ -162,11 +190,18 @@ class BatteryCollector:
             time_remaining_str = f"{hours}h {minutes}m"
 
         health = "Good"
-        macos_details = self._fetch_macos_battery_details()
-        if macos_details.get("is_failed"):
+        
+        if sys.platform == "linux":
+            plat_details = self._fetch_linux_battery_details()
+        elif sys.platform == "win32":
+            plat_details = self._fetch_windows_battery_details()
+        else:
+            plat_details = {}
+
+        if plat_details.get("is_failed"):
             health = "Failing/Dead"
-        elif macos_details.get("max_capacity_pct") is not None:
-            cap = macos_details["max_capacity_pct"]
+        elif plat_details.get("max_capacity_pct") is not None:
+            cap = plat_details["max_capacity_pct"]
             if cap > 80:
                 health = f"Good ({cap}%)"
             elif cap > 50:
@@ -182,16 +217,16 @@ class BatteryCollector:
             charging=charging,
             time_remaining_str=time_remaining_str,
             health=health,
-            temperature=macos_details.get("temperature"),
-            virtual_temperature=macos_details.get("virtual_temperature"),
-            max_lifetime_temp=macos_details.get("max_lifetime_temp"),
-            min_lifetime_temp=macos_details.get("min_lifetime_temp"),
-            cycle_count=macos_details.get("cycle_count"),
-            design_capacity=macos_details.get("design_capacity"),
-            nominal_capacity=macos_details.get("nominal_capacity"),
-            max_capacity_pct=macos_details.get("max_capacity_pct"),
-            wear_level_pct=macos_details.get("wear_level_pct"),
-            is_failed=macos_details.get("is_failed"),
-            voltage_v=macos_details.get("voltage_v"),
-            amperage_ma=macos_details.get("amperage_ma"),
+            temperature=plat_details.get("temperature"),
+            virtual_temperature=plat_details.get("virtual_temperature"),
+            max_lifetime_temp=plat_details.get("max_lifetime_temp"),
+            min_lifetime_temp=plat_details.get("min_lifetime_temp"),
+            cycle_count=plat_details.get("cycle_count"),
+            design_capacity=plat_details.get("design_capacity"),
+            nominal_capacity=plat_details.get("nominal_capacity"),
+            max_capacity_pct=plat_details.get("max_capacity_pct"),
+            wear_level_pct=plat_details.get("wear_level_pct"),
+            is_failed=plat_details.get("is_failed"),
+            voltage_v=plat_details.get("voltage_v"),
+            amperage_ma=plat_details.get("amperage_ma"),
         )

@@ -158,7 +158,7 @@ class Dashboard:
         layout["left"].split_column(
             Layout(name="cpu_info", ratio=11),
             Layout(name="memory_disk", ratio=9),
-            Layout(name="battery", size=8),
+            Layout(name="battery", size=10),
         )
 
         layout["right"].split_column(
@@ -204,14 +204,8 @@ class Dashboard:
             Text.from_markup(f"[bold {t.accent}]Model :[/] {state.cpu.model}")
         )
 
-        # Line 2: Architecture + Core breakdown
-        if state.cpu.performance_cores is not None and state.cpu.efficiency_cores is not None:
-            cores_str = (
-                f"{state.cpu.physical_cores} Total "
-                f"({state.cpu.performance_cores}P + {state.cpu.efficiency_cores}E)"
-            )
-        else:
-            cores_str = f"{state.cpu.physical_cores}P / {state.cpu.logical_cores}L"
+        # Line 2: Architecture + Core counts
+        cores_str = f"{state.cpu.physical_cores}P / {state.cpu.logical_cores}L"
         cpu_table.add_row(
             Text.from_markup(
                 f"[bold {t.accent}]Arch  :[/] {state.cpu.architecture} | "
@@ -219,42 +213,20 @@ class Dashboard:
             )
         )
 
-        # Line 3: GPU and NPU cores (if available)
-        extras = []
-        if state.cpu.gpu_cores is not None:
-            extras.append(f"[bold {t.accent}]GPU Cores:[/] {state.cpu.gpu_cores}")
-        if state.cpu.npu_cores is not None:
-            extras.append(f"[bold {t.accent}]Neural Engine:[/] {state.cpu.npu_cores}-core")
-        if extras:
-            cpu_table.add_row(Text.from_markup(" | ".join(extras)))
-
-        # Line 4: Frequency + Thermal Pressure
-        # Color-code thermal pressure
-        tp = state.cpu.thermal_pressure
-        if tp == "Normal":
-            tp_color = t.success
-        elif tp == "Fair":
-            tp_color = t.warning
-        else:
-            tp_color = t.danger
-
-        # Line 4: Frequency + Power Draw
+        # Line 3: Frequency + Power Draw
         power_str = ""
         if state.cpu.cpu_power_w is not None:
             power_str += f" | [bold {t.accent}]CPU Power:[/] {state.cpu.cpu_power_w:.2f} W"
-        if state.cpu.gpu_power_w is not None:
-            power_str += f" | [bold {t.accent}]GPU Power:[/] {state.cpu.gpu_power_w:.2f} W"
 
         cpu_table.add_row(
             Text.from_markup(
                 f"[bold {t.accent}]Freq  :[/] {state.cpu.frequency_current:.0f} / "
-                f"{state.cpu.frequency_max:.0f} MHz | "
-                f"[bold {t.accent}]Thermal:[/] [{tp_color}]{tp}[/]"
+                f"{state.cpu.frequency_max:.0f} MHz"
                 f"{power_str}"
             )
         )
 
-        # Line 5: Temperature readings row
+        # Line 4: Temperature
         def _temp_color(val: Optional[float]) -> str:
             """Return a Rich color string based on temperature severity."""
             if val is None:
@@ -266,34 +238,36 @@ class Dashboard:
             return t.success
 
         temp_parts = []
-        # CPU Die (from powermetrics, requires sudo)
-        if state.cpu.cpu_die_temp is not None:
-            c = _temp_color(state.cpu.cpu_die_temp)
-            temp_parts.append(f"[bold {t.accent}]CPU Die:[/] [{c}]{state.cpu.cpu_die_temp:.1f}°C[/]")
-
-        # GPU Die (from powermetrics, requires sudo)
-        if state.cpu.gpu_die_temp is not None:
-            c = _temp_color(state.cpu.gpu_die_temp)
-            temp_parts.append(f"[bold {t.accent}]GPU Die:[/] [{c}]{state.cpu.gpu_die_temp:.1f}°C[/]")
-
-        # Hotspot (max of all powermetrics sensors)
-        if state.cpu.hotspot_temp is not None:
-            c = _temp_color(state.cpu.hotspot_temp)
-            temp_parts.append(f"[bold {t.accent}]Hotspot:[/] [{c}]{state.cpu.hotspot_temp:.1f}°C[/]")
-
-        # Battery/fallback temp (always available, no sudo)
         if state.cpu.temperature is not None:
             c = _temp_color(state.cpu.temperature)
-            # Label differs based on whether die temps are available
-            if state.cpu.cpu_die_temp is not None:
-                temp_parts.append(f"[bold {t.accent}]Board:[/] [{c}]{state.cpu.temperature:.1f}°C[/]")
-            else:
-                temp_parts.append(f"[bold {t.accent}]Temp:[/] [{c}]{state.cpu.temperature:.1f}°C[/]")
+            temp_parts.append(f"[bold {t.accent}]CPU Temp:[/] [{c}]{state.cpu.temperature:.1f}°C[/]")
 
         if temp_parts:
             cpu_table.add_row(Text.from_markup(" | ".join(temp_parts)))
         else:
             cpu_table.add_row(Text.from_markup(f"[bold {t.accent}]Temp:[/] N/A"))
+
+        # Line 5: GPU Info (NVIDIA via GPUtil)
+        if state.cpu.gpu_name is not None:
+            gpu_parts = [f"[bold {t.accent}]GPU:[/] {state.cpu.gpu_name}"]
+            if state.cpu.gpu_temp is not None:
+                c = _temp_color(state.cpu.gpu_temp)
+                gpu_parts.append(f"[bold {t.accent}]Temp:[/] [{c}]{state.cpu.gpu_temp:.0f}°C[/]")
+            if state.cpu.gpu_load is not None:
+                load_color = t.danger if state.cpu.gpu_load > 85.0 else (t.warning if state.cpu.gpu_load > 60.0 else t.success)
+                gpu_parts.append(f"[bold {t.accent}]Load:[/] [{load_color}]{state.cpu.gpu_load:.0f}%[/]")
+            cpu_table.add_row(Text.from_markup(" | ".join(gpu_parts)))
+
+            # GPU VRAM + Power
+            gpu_extra = []
+            if state.cpu.gpu_memory_used is not None and state.cpu.gpu_memory_total is not None:
+                gpu_extra.append(
+                    f"[bold {t.accent}]VRAM:[/] {state.cpu.gpu_memory_used:.0f} / {state.cpu.gpu_memory_total:.0f} MB"
+                )
+            if state.cpu.gpu_power_w is not None:
+                gpu_extra.append(f"[bold {t.accent}]GPU Power:[/] {state.cpu.gpu_power_w:.1f} W")
+            if gpu_extra:
+                cpu_table.add_row(Text.from_markup(" | ".join(gpu_extra)))
 
         # CPU overall usage bar
         bar_color = t.danger if state.cpu.usage_overall > 85.0 else (t.warning if state.cpu.usage_overall > 60.0 else t.success)
@@ -315,13 +289,11 @@ class Dashboard:
         cpu_table.add_row(Text(""))  # Spacer
         cpu_table.add_row(overall_row)
 
-        # Per-core display with P/E labels
+        # Per-core display
         core_cols = Table.grid(expand=True)
         core_cols.add_column(ratio=1)
         core_cols.add_column(ratio=1)
 
-        p_cores = state.cpu.performance_cores
-        e_cores = state.cpu.efficiency_cores
         core_rows_l = []
         core_rows_r = []
 
@@ -335,15 +307,7 @@ class Dashboard:
                 finished_style=core_bar_color,
             )
 
-            # Label cores as P0-P3, E0-E3 on Apple Silicon
-            if p_cores is not None and e_cores is not None:
-                if idx < p_cores:
-                    label = f"P{idx}"
-                else:
-                    label = f"E{idx - p_cores}"
-            else:
-                label = f"C{idx}"
-
+            label = f"C{idx}"
             core_text = f"{label:<3}{pct:>4.0f}% "
             line = Columns([Text(core_text, style=t.text), core_bar])
 
@@ -372,7 +336,7 @@ class Dashboard:
         layout["cpu_info"].update(
             Panel(
                 cpu_layout,
-                title=f"[bold {t.title}]CPU Info[/]",
+                title=f"[bold {t.title}]CPU & GPU Info[/]",
                 border_style=t.border,
             )
         )
@@ -498,17 +462,6 @@ class Dashboard:
             temp_parts = []
             if state.battery.temperature is not None:
                 temp_parts.append(f"[bold {t.accent}]Temp:[/] {state.battery.temperature:.1f}°C")
-            if state.battery.virtual_temperature is not None:
-                temp_parts.append(f"[bold {t.accent}]Virtual:[/] {state.battery.virtual_temperature:.1f}°C")
-            
-            # Hotspot / Lifetime Max-Min
-            lifetime_parts = []
-            if state.battery.max_lifetime_temp is not None:
-                lifetime_parts.append(f"Max {state.battery.max_lifetime_temp:.0f}°C")
-            if state.battery.min_lifetime_temp is not None:
-                lifetime_parts.append(f"Min {state.battery.min_lifetime_temp:.0f}°C")
-            if lifetime_parts:
-                temp_parts.append(f"[bold {t.accent}]Limits:[/] " + "/".join(lifetime_parts))
 
             if temp_parts:
                 bat_details.add_row(Text.from_markup(" | ".join(temp_parts)))

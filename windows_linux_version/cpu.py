@@ -1,25 +1,18 @@
 """
-CPU metrics collection module for the Terminal System Dashboard Pro.
-Retrieves processor information, core counts (P/E), GPU/NPU cores,
-usage per core, clock frequency, die/hotspot temperatures, power usage, and thermal pressure.
-
-On Apple Silicon Macs with sudo access, reads CPU die temperature,
-GPU die temperature, and computes the hotspot (max sensor) using
-powermetrics. Requires sudo credentials to be cached before the
-dashboard starts.
+CPU metrics collection module for the Terminal System Dashboard Pro (Windows & Linux).
+Retrieves processor information, core counts, usage per core, clock frequency,
+temperatures, power usage (RAPL on Linux), and NVIDIA GPU metrics via GPUtil.
 """
 
 import os
 import sys
-import re
 import logging
 import subprocess
 import platform
-import threading
 import time
 import psutil
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Dict
 from utils import safe_execute
 
 logger = logging.getLogger("CPU")
@@ -27,38 +20,31 @@ logger = logging.getLogger("CPU")
 
 @dataclass
 class CPUData:
-    """
-    Dataclass representing collected CPU metrics.
-    """
     model: str
     architecture: str
     physical_cores: int
     logical_cores: int
-    performance_cores: Optional[int]
-    efficiency_cores: Optional[int]
-    gpu_cores: Optional[int]
-    npu_cores: Optional[int]
     usage_overall: float
     usage_per_core: List[float]
     frequency_current: float
     frequency_max: float
-    temperature: Optional[float]
-    cpu_die_temp: Optional[float]
-    gpu_die_temp: Optional[float]
-    hotspot_temp: Optional[float]
-    cpu_power_w: Optional[float]
+    temperature: Optional[float]          # CPU temp
+    cpu_power_w: Optional[float]          # RAPL on Linux
+    thermal_pressure: str                 # N/A on Win/Linux
+    # GPU (NVIDIA via GPUtil)
+    gpu_name: Optional[str]
+    gpu_temp: Optional[float]
+    gpu_load: Optional[float]
+    gpu_memory_used: Optional[float]      # MB
+    gpu_memory_total: Optional[float]     # MB
     gpu_power_w: Optional[float]
-    thermal_pressure: str
 
 
 class CPUCollector:
     """
-    Orchestrates gathering of CPU specifications and utilization metrics.
+    Orchestrates gathering of CPU and GPU specifications and utilization metrics
+    for Windows and Linux platforms.
     Static parameters are cached upon instantiation to optimize execution speed.
-    On Apple Silicon Macs, queries sysctl and system_profiler for P/E core
-    breakdowns, GPU core count, and Neural Engine core count.
-    When sudo access is available, spawns a background thread to periodically
-    read die-level temperatures and power usage via powermetrics.
     """
 
     def __init__(self) -> None:
@@ -68,72 +54,28 @@ class CPUCollector:
         self._architecture: str = self._fetch_cpu_arch()
         self._physical_cores: int = psutil.cpu_count(logical=False) or 0
         self._logical_cores: int = psutil.cpu_count(logical=True) or 0
-        self._is_apple_silicon: bool = self._detect_apple_silicon()
 
-        # Apple Silicon specific data (cached at startup — these don't change)
-        self._perf_cores: Optional[int] = None
-        self._eff_cores: Optional[int] = None
-        self._gpu_cores: Optional[int] = None
-        self._npu_cores: Optional[int] = None
-
-        if self._is_apple_silicon:
-            self._perf_cores, self._eff_cores = self._fetch_pe_cores()
-            self._gpu_cores = self._fetch_gpu_cores()
-            self._npu_cores = self._fetch_npu_cores()
-
-        # Die-level temperature readings and power (updated by background thread)
-        self._cpu_die_temp: Optional[float] = None
-        self._gpu_die_temp: Optional[float] = None
-        self._hotspot_temp: Optional[float] = None
-        self._cpu_power_w: Optional[float] = None
-        self._gpu_power_w: Optional[float] = None
-        
-        self._sudo_available: bool = False
-        self._temp_thread_running: bool = False
-
-        # Check if sudo credentials are cached and start background temp reader
-        if self._is_apple_silicon:
-            self._sudo_available = self._check_sudo_cached()
-            if self._sudo_available:
-                self._start_temp_reader()
+        # RAPL state tracking for non-blocking power calculation (Linux only)
+        self._last_rapl_energy: Optional[float] = None
+        self._last_rapl_time: Optional[float] = None
+        if sys.platform == "linux":
+            try:
+                # Perform an initial read to establish baseline
+                energy = self._read_rapl_energy()
+                if energy is not None:
+                    self._last_rapl_energy = energy
+                    self._last_rapl_time = time.time()
+            except Exception as e:
+                logger.debug("Failed to initialize RAPL baseline: %s", e)
 
         # Initialize psutil percent collection baseline
         psutil.cpu_percent(interval=None)
         psutil.cpu_percent(interval=None, percpu=True)
 
-    def _detect_apple_silicon(self) -> bool:
-        """Check if we are running on an Apple Silicon Mac."""
-        if sys.platform != "darwin":
-            return False
-        return platform.machine() == "arm64" and "Apple" in self._model
-
-    def _check_sudo_cached(self) -> bool:
-        """
-        Check if sudo credentials are currently cached (no password prompt needed).
-
-        Returns:
-            bool: True if sudo can run without a password prompt right now.
-        """
-        try:
-            result = subprocess.run(
-                ["sudo", "-n", "true"],
-                capture_output=True, timeout=3
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
     @safe_execute("Unknown Processor")
     def _fetch_cpu_model(self) -> str:
         """Fetch marketing brand name of CPU."""
-        if sys.platform == "darwin":
-            try:
-                res = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True, timeout=2)
-                if res.returncode == 0 and res.stdout.strip():
-                    return res.stdout.strip()
-            except Exception:
-                pass
-        elif sys.platform == "linux":
+        if sys.platform == "linux":
             try:
                 with open("/proc/cpuinfo") as f:
                     for line in f:
@@ -153,9 +95,12 @@ class CPUCollector:
                 pass
 
         # Lazy fallback
-        import cpuinfo
-        info = cpuinfo.get_cpu_info()
-        return str(info.get("brand_raw", "Unknown Processor"))
+        try:
+            import cpuinfo
+            info = cpuinfo.get_cpu_info()
+            return str(info.get("brand_raw", "Unknown Processor"))
+        except ImportError:
+            return "Unknown Processor"
 
     @safe_execute("Unknown Arch")
     def _fetch_cpu_arch(self) -> str:
@@ -167,282 +112,141 @@ class CPUCollector:
             return arch
 
         # Lazy fallback
-        import cpuinfo
-        info = cpuinfo.get_cpu_info()
-        return str(info.get("arch", "Unknown Arch"))
-
-    @safe_execute((None, None))
-    def _fetch_pe_cores(self) -> Tuple[Optional[int], Optional[int]]:
-        """
-        Query sysctl for Performance and Efficiency core counts on Apple Silicon.
-
-        Returns:
-            Tuple of (performance_cores, efficiency_cores) or (None, None) if unavailable.
-        """
-        perf_cores = None
-        eff_cores = None
-
         try:
-            result = subprocess.run(
-                ["sysctl", "hw.perflevel0.physicalcpu", "hw.perflevel1.physicalcpu"],
-                capture_output=True, text=True, timeout=3
-            )
-            for line in result.stdout.strip().splitlines():
-                if "perflevel0.physicalcpu:" in line:
-                    perf_cores = int(line.split(":")[-1].strip())
-                elif "perflevel1.physicalcpu:" in line:
-                    eff_cores = int(line.split(":")[-1].strip())
-        except Exception as e:
-            logger.debug("Failed to query P/E cores via sysctl: %s", e)
-
-        return perf_cores, eff_cores
-
-    @safe_execute(None)
-    def _fetch_gpu_cores(self) -> Optional[int]:
-        """
-        Query system_profiler for GPU core count on Apple Silicon.
-
-        Returns:
-            Optional[int]: Number of GPU cores, or None if unavailable.
-        """
-        try:
-            import plistlib
-            result = subprocess.run(
-                ["system_profiler", "SPDisplaysDataType", "-xml"],
-                capture_output=True, timeout=5
-            )
-            plist = plistlib.loads(result.stdout)
-            items = plist[0]["_items"][0]
-            cores = items.get("sppci_cores")
-            if cores is not None:
-                return int(cores)
-        except Exception as e:
-            logger.debug("Failed to query GPU cores: %s", e)
-        return None
-
-    @safe_execute(None)
-    def _fetch_npu_cores(self) -> Optional[int]:
-        """
-        Determine Neural Engine core count for known Apple Silicon chips.
-
-        Apple does not expose NPU core count via a simple API, so we match
-        based on the chip model name. If unknown, returns None.
-
-        Returns:
-            Optional[int]: Number of Neural Engine cores.
-        """
-        # Known Neural Engine core counts for Apple Silicon chips
-        npu_map = {
-            "M1": 16, "M1 Pro": 16, "M1 Max": 16, "M1 Ultra": 32,
-            "M2": 16, "M2 Pro": 16, "M2 Max": 16, "M2 Ultra": 32,
-            "M3": 16, "M3 Pro": 16, "M3 Max": 16, "M3 Ultra": 32,
-            "M4": 16, "M4 Pro": 16, "M4 Max": 16, "M4 Ultra": 32,
-            "M5": 16, "M5 Pro": 16, "M5 Max": 16, "M5 Ultra": 32,
-        }
-
-        model_upper = self._model.upper()
-        # Walk from longest chip name to shortest to match "M2 Ultra" before "M2"
-        for chip_name in sorted(npu_map.keys(), key=len, reverse=True):
-            if chip_name.upper() in model_upper:
-                return npu_map[chip_name]
-
-        return None
-
-    # ------------------------------------------------------------------
-    # Die-level temperature and power reading via sudo powermetrics
-    # ------------------------------------------------------------------
-
-    def _start_temp_reader(self) -> None:
-        """Spawn a daemon thread that periodically reads die temperatures."""
-        if self._temp_thread_running:
-            return
-        self._temp_thread_running = True
-        thread = threading.Thread(target=self._temp_reader_loop, daemon=True)
-        thread.start()
-        logger.info("Started background die-temperature reader thread.")
-
-    def _temp_reader_loop(self) -> None:
-        """
-        Background loop that runs sudo powermetrics every ~3 seconds to fetch
-        die-level thermal data. Parses text output for temperature lines.
-        """
-        while self._temp_thread_running:
-            try:
-                result = subprocess.run(
-                    [
-                        "sudo", "-n", "powermetrics",
-                        "--samplers", "cpu_power,gpu_power,thermal",
-                        "-i", "200",      # 200 ms sample interval to guarantee sensor updates
-                        "-n", "1",      # one sample only
-                    ],
-                    capture_output=True, text=True, timeout=10,
-                )
-
-                if result.returncode != 0:
-                    # Sudo credentials likely expired
-                    logger.warning("powermetrics returned non-zero; sudo may have expired.")
-                    self._sudo_available = False
-                    self._temp_thread_running = False
-                    break
-
-                self._parse_powermetrics_output(result.stdout)
-
-            except subprocess.TimeoutExpired:
-                logger.debug("powermetrics timed out.")
-            except Exception as e:
-                logger.debug("Error in temp reader: %s", e)
-
-            # Wait before next reading — powermetrics is expensive
-            time.sleep(3.0)
-
-    def _parse_powermetrics_output(self, output: str) -> None:
-        """
-        Parse the text-format powermetrics output for temperature and power readings.
-        """
-        all_temps: List[float] = []
-        cpu_die = None
-        gpu_die = None
-        cpu_power = None
-        gpu_power = None
-
-        for line in output.splitlines():
-            stripped = line.strip()
-            lower = stripped.lower()
-
-            # 1. Parse temperature sensors
-            if "temperature" in lower:
-                try:
-                    # Robust match for digits followed by optional spaces and C
-                    match = re.search(r'([0-9.]+)\s*[Cc]', stripped)
-                    if match:
-                        temp_val = float(match.group(1))
-                        all_temps.append(temp_val)
-
-                        if "cpu die" in lower or "cpu active" in lower:
-                            cpu_die = temp_val
-                        elif "gpu die" in lower or "gpu active" in lower:
-                            gpu_die = temp_val
-                except Exception:
-                    pass
-
-            # 2. Parse power consumption
-            if "cpu power" in lower:
-                try:
-                    match = re.search(r'cpu power:\s*([0-9.]+)\s*(\w+)', lower)
-                    if match:
-                        val = float(match.group(1))
-                        unit = match.group(2)
-                        cpu_power = val / 1000.0 if unit == "mw" else val
-                except Exception:
-                    pass
-            elif "gpu power" in lower:
-                try:
-                    match = re.search(r'gpu power:\s*([0-9.]+)\s*(\w+)', lower)
-                    if match:
-                        val = float(match.group(1))
-                        unit = match.group(2)
-                        gpu_power = val / 1000.0 if unit == "mw" else val
-                except Exception:
-                    pass
-
-        # If we failed to parse anything but got output, log it to help debugging
-        if not all_temps and output.strip():
-            logger.info("powermetrics output didn't yield temperatures. Raw output excerpt:\n%s", output[:1000])
-
-        # Update shared state
-        if cpu_die is not None:
-            self._cpu_die_temp = cpu_die
-        if gpu_die is not None:
-            self._gpu_die_temp = gpu_die
-        if all_temps:
-            self._hotspot_temp = max(all_temps)
-        if cpu_power is not None:
-            self._cpu_power_w = cpu_power
-        if gpu_power is not None:
-            self._gpu_power_w = gpu_power
-
-    # ------------------------------------------------------------------
-    # Fallback temperature methods (no sudo required)
-    # ------------------------------------------------------------------
+            import cpuinfo
+            info = cpuinfo.get_cpu_info()
+            return str(info.get("arch", "Unknown Arch"))
+        except ImportError:
+            return "Unknown Arch"
 
     @safe_execute(None)
     def _fetch_cpu_temp(self) -> Optional[float]:
         """
-        Query system temperature sensors.
-
-        On Apple Silicon, psutil cannot read CPU die temperature without root.
-        Falls back to battery temperature (divided by 100 to convert from
-        Apple's centi-celsius) if available.
-
+        Query system temperature sensors using psutil (Linux/Windows) or WMI (Windows).
         Returns:
             Optional[float]: Temperature in Celsius if sensors exist, else None.
         """
-        # Standard psutil path (works on Linux and Intel Macs)
         if hasattr(psutil, "sensors_temperatures"):
-            temps = psutil.sensors_temperatures()
-            if temps:
-                sensor_keys = ["coretemp", "cpu_thermal", "k10temp", "acpitz"]
-                for key in sensor_keys:
-                    if key in temps and temps[key]:
-                        return float(temps[key][0].current)
-                for sensor_list in temps.values():
-                    if sensor_list:
-                        return float(sensor_list[0].current)
+            try:
+                temps = psutil.sensors_temperatures()
+                if temps:
+                    sensor_keys = ["coretemp", "cpu_thermal", "k10temp", "acpitz"]
+                    for key in sensor_keys:
+                        if key in temps and temps[key]:
+                            return float(temps[key][0].current)
+                    for sensor_list in temps.values():
+                        if sensor_list:
+                            return float(sensor_list[0].current)
+            except Exception as e:
+                logger.debug("Failed to read temps via psutil: %s", e)
 
-        # Apple Silicon fallback: read battery sensor temp from ioreg
-        if self._is_apple_silicon:
+        # Windows WMI fallback
+        if sys.platform == "win32":
             try:
                 result = subprocess.run(
-                    ["ioreg", "-rc", "AppleSmartBattery"],
+                    ["wmic", "/namespace:\\\\root\\wmi", "PATH", "MSAcpi_ThermalZoneTemperature", "get", "CurrentTemperature"],
                     capture_output=True, text=True, timeout=3
                 )
-                for line in result.stdout.splitlines():
-                    stripped = line.strip()
-                    # Match exact "Temperature" = XXXX (centi-celsius)
-                    if stripped.startswith('"Temperature"'):
-                        val_str = stripped.split("=")[-1].strip()
-                        raw = int(val_str)
-                        return round(raw / 100.0, 1)
+                if result.returncode == 0:
+                    lines = result.stdout.strip().split("\n")
+                    if len(lines) >= 2:
+                        # Value is in decikelvins
+                        decikelvins = float(lines[1].strip())
+                        celsius = (decikelvins / 10.0) - 273.15
+                        return round(celsius, 1)
             except Exception as e:
-                logger.debug("Failed to read battery temp: %s", e)
+                logger.debug("Failed to read WMI temp: %s", e)
 
         return None
 
-    @safe_execute("Normal")
+    def _read_rapl_energy(self) -> Optional[float]:
+        """Helper to read energy_uj from intel-rapl on Linux."""
+        try:
+            with open("/sys/class/powercap/intel-rapl:0/energy_uj", "r") as f:
+                return float(f.read().strip())
+        except Exception:
+            return None
+
+    @safe_execute(None)
+    def _fetch_cpu_power_rapl(self) -> Optional[float]:
+        """
+        On Linux only, computes CPU power in Watts based on intel-rapl energy_uj.
+        Uses cached previous reading to avoid blocking.
+        """
+        if sys.platform != "linux":
+            return None
+        
+        current_energy = self._read_rapl_energy()
+        current_time = time.time()
+        
+        if current_energy is None:
+            return None
+            
+        power_w = None
+        if self._last_rapl_energy is not None and self._last_rapl_time is not None:
+            energy_diff = current_energy - self._last_rapl_energy
+            time_diff = current_time - self._last_rapl_time
+            
+            # Handle counter wrap-around
+            if energy_diff < 0:
+                energy_diff += 2**64
+                
+            if time_diff > 0:
+                power_w = (energy_diff / 1_000_000.0) / time_diff
+                
+        self._last_rapl_energy = current_energy
+        self._last_rapl_time = current_time
+        
+        return power_w
+
+    @safe_execute("N/A")
     def _fetch_thermal_pressure(self) -> str:
         """
-        Query macOS pmset for thermal throttling state.
-        Returns a human-readable label like 'Normal', 'Fair', 'Serious', or 'Critical'.
-
-        On non-macOS systems, returns 'N/A'.
+        No direct equivalent on Win/Linux in this context.
+        Always returns 'N/A'.
         """
-        if sys.platform != "darwin":
-            return "N/A"
-
+        return "N/A"
+        
+    @safe_execute({})
+    def _fetch_gpu_info(self) -> Dict:
+        """
+        Uses GPUtil to detect NVIDIA GPUs. Returns dict with metrics.
+        Attempts to get power draw via nvidia-smi.
+        """
+        gpu_info = {}
         try:
-            result = subprocess.run(
-                ["pmset", "-g", "therm"],
-                capture_output=True, text=True, timeout=3
-            )
-            output = result.stdout.lower()
-            if "no thermal warning" in output and "no performance warning" in output:
-                return "Normal"
-            elif "nominal" in output:
-                return "Normal"
-            elif "fair" in output:
-                return "Fair"
-            elif "serious" in output:
-                return "Serious"
-            elif "critical" in output:
-                return "Critical"
-            else:
-                return "Normal"
-        except Exception:
-            return "N/A"
+            import GPUtil
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu = gpus[0]
+                gpu_info["gpu_name"] = gpu.name
+                gpu_info["gpu_temp"] = float(gpu.temperature)
+                gpu_info["gpu_load"] = float(gpu.load * 100.0) # GPUtil load is 0.0-1.0
+                gpu_info["gpu_memory_used"] = float(gpu.memoryUsed)
+                gpu_info["gpu_memory_total"] = float(gpu.memoryTotal)
+                
+                # Power draw via nvidia-smi
+                try:
+                    result = subprocess.run(
+                        ["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"],
+                        capture_output=True, text=True, timeout=2
+                    )
+                    if result.returncode == 0:
+                        val = result.stdout.strip()
+                        if val and "ERR!" not in val and "[Not Supported]" not in val:
+                            gpu_info["gpu_power_w"] = float(val)
+                except Exception as e:
+                    logger.debug("Failed to read GPU power via nvidia-smi: %s", e)
+        except ImportError:
+            logger.debug("GPUtil not installed, skipping GPU metrics.")
+        except Exception as e:
+            logger.debug("Error fetching GPU info: %s", e)
+            
+        return gpu_info
 
     def collect(self) -> CPUData:
         """
-        Gather real-time CPU performance statistics.
+        Gather real-time CPU and GPU performance statistics.
 
         Returns:
             CPUData: The populated CPU metrics dataclass.
@@ -456,26 +260,27 @@ class CPUCollector:
         freq_max = float(freq_info.max) if freq_info else 0.0
 
         temp = self._fetch_cpu_temp()
+        power_w = self._fetch_cpu_power_rapl()
         thermal = self._fetch_thermal_pressure()
+        
+        gpu_info = self._fetch_gpu_info()
 
         return CPUData(
             model=self._model,
             architecture=self._architecture,
             physical_cores=self._physical_cores,
             logical_cores=self._logical_cores,
-            performance_cores=self._perf_cores,
-            efficiency_cores=self._eff_cores,
-            gpu_cores=self._gpu_cores,
-            npu_cores=self._npu_cores,
             usage_overall=usage_overall,
             usage_per_core=usage_per_core,
             frequency_current=freq_current,
             frequency_max=freq_max,
             temperature=temp,
-            cpu_die_temp=self._cpu_die_temp,
-            gpu_die_temp=self._gpu_die_temp,
-            hotspot_temp=self._hotspot_temp,
-            cpu_power_w=self._cpu_power_w,
-            gpu_power_w=self._gpu_power_w,
+            cpu_power_w=power_w,
             thermal_pressure=thermal,
+            gpu_name=gpu_info.get("gpu_name"),
+            gpu_temp=gpu_info.get("gpu_temp"),
+            gpu_load=gpu_info.get("gpu_load"),
+            gpu_memory_used=gpu_info.get("gpu_memory_used"),
+            gpu_memory_total=gpu_info.get("gpu_memory_total"),
+            gpu_power_w=gpu_info.get("gpu_power_w"),
         )
