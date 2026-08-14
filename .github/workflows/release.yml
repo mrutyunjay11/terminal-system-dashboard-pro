@@ -1,0 +1,155 @@
+name: Build & Release Multi-Platform Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS (DMG & Binary)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r mac_version/requirements.txt
+          pip install pyinstaller
+
+      - name: Build macOS Binary & DMG
+        run: |
+          chmod +x mac_version/build_mac.sh
+          ./mac_version/build_mac.sh
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: |
+            mac_version/dist/TSDP-macOS.dmg
+            mac_version/dist/TSDP-macOS
+
+  build-windows:
+    name: Build Windows (EXE & ZIP)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r windows_linux_version/requirements.txt
+          pip install pyinstaller
+
+      - name: Build Windows Executable
+        run: |
+          cd windows_linux_version
+          pyinstaller --onefile --name "TSDP-Windows" --add-data "config.json;." --collect-all "rich" --collect-all "psutil" --collect-all "cpuinfo" --hidden-import "speedtest" --hidden-import "GPUtil" --console project.py
+          mkdir release
+          copy dist\TSDP-Windows.exe release\
+          copy config.json release\
+          copy README.md release\
+          Compress-Archive -Path release\* -DestinationPath dist\TSDP-Windows.zip
+        shell: powershell
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            windows_linux_version/dist/TSDP-Windows.exe
+            windows_linux_version/dist/TSDP-Windows.zip
+
+  build-linux:
+    name: Build Linux (Tarball & Binary)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r windows_linux_version/requirements.txt
+          pip install pyinstaller
+
+      - name: Build Linux Binary & Tarball
+        run: |
+          chmod +x windows_linux_version/build_linux.sh
+          ./windows_linux_version/build_linux.sh
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            windows_linux_version/dist/TSDP-Linux.tar.gz
+            windows_linux_version/dist/TSDP-Linux
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+
+      - name: Flatten release assets
+        run: |
+          mkdir -p final_assets
+          find release_assets -type f -exec cp {} final_assets/ \;
+          ls -la final_assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Terminal System Dashboard Pro ${{ github.ref_name }}"
+          body: |
+            ## 🚀 Terminal System Dashboard Pro Release ${{ github.ref_name }}
+            
+            Standalone cross-platform builds — no Python installation required!
+            
+            ### 📦 Downloads:
+            - 🍏 **macOS**: [`TSDP-macOS.dmg`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/TSDP-macOS.dmg) (Mount DMG and run)
+            - 🪟 **Windows**: [`TSDP-Windows.zip`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/TSDP-Windows.zip) or [`TSDP-Windows.exe`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/TSDP-Windows.exe)
+            - 🐧 **Linux**: [`TSDP-Linux.tar.gz`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/TSDP-Linux.tar.gz) or [`TSDP-Linux`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/TSDP-Linux)
+            
+            ### 🛠️ Quick Run:
+            - **macOS**: Open `TSDP-macOS.dmg`, drag or double-click to run in Terminal.
+            - **Windows**: Extract `TSDP-Windows.zip` and launch `TSDP-Windows.exe` in Windows Terminal.
+            - **Linux**: `tar -xzf TSDP-Linux.tar.gz && ./TSDP-Linux`
+          files: final_assets/*
+          draft: false
+          prerelease: false

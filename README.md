@@ -75,17 +75,30 @@ This repository contains two separate versions optimised for each platform:
 | Feature | 🍎 macOS (Apple Silicon) | 🍎 macOS (Intel) | 🪟 Windows | 🐧 Linux |
 |---|:---:|:---:|:---:|:---:|
 | CPU usage & per-core load | ✅ | ✅ | ✅ | ✅ |
+| CPU Temperature | ✅ (powermetrics) | ✅ (psutil) | ✅ (WMI) | ✅ (psutil sensors) |
 | RAM & Swap monitoring | ✅ | ✅ | ✅ | ✅ |
 | Disk usage & I/O speed | ✅ | ✅ | ✅ | ✅ |
 | Network speed & speedtest | ✅ | ✅ | ✅ | ✅ |
 | Process list (CPU & RAM) | ✅ | ✅ | ✅ | ✅ |
 | Battery status & health | ✅ | ✅ | ✅ | ✅ |
+| Battery diagnostics (cycles/wear/V/mA) | ✅ (ioreg) | ✅ (ioreg) | ❌ | ✅ (/sys) |
+| Dedicated GPU monitoring | ✅ (Apple GPU) | ❌ | ✅ (NVIDIA GPUtil) | ✅ (NVIDIA GPUtil) |
+| Real-time Power Draw (Watts) | ✅ (powermetrics) | ❌ | ❌ | ✅ (Intel RAPL) |
 | All 5 themes | ✅ | ✅ | ✅ | ✅ |
 | Export (JSON / CSV / TXT) | ✅ | ✅ | ✅ | ✅ |
 | P/E core split display | ✅ | ❌ | ❌ | ❌ |
-| CPU/GPU power draw (Watts) | ✅ (with sudo) | ❌ | ❌ | ❌ |
-| Battery ioreg diagnostics | ✅ | ✅ | ❌ | ❌ |
-| GPU & Neural Engine cores | ✅ | ❌ | ❌ | ❌ |
+
+---
+
+## 📦 Direct Downloads & Standalone Installers
+
+Don't want to install Python? Download standalone, pre-compiled executables directly from [GitHub Releases](https://github.com/mrutyunjay11/terminal-system-dashboard-pro/releases):
+
+| Operating System | Package Format | Download Link / Instructions |
+|---|---|---|
+| 🍏 **macOS** | Disk Image (`.dmg`) | [**Download TSDP-macOS.dmg**](https://github.com/mrutyunjay11/terminal-system-dashboard-pro/releases/latest) → Mount and run |
+| 🪟 **Windows** | Executable (`.exe` / `.zip`) | [**Download TSDP-Windows.zip**](https://github.com/mrutyunjay11/terminal-system-dashboard-pro/releases/latest) → Extract and run in Windows Terminal |
+| 🐧 **Linux** | Tarball (`.tar.gz`) / Binary | [**Download TSDP-Linux.tar.gz**](https://github.com/mrutyunjay11/terminal-system-dashboard-pro/releases/latest) → `tar -xzf TSDP-Linux.tar.gz && ./TSDP-Linux` |
 
 ---
 

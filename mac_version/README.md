@@ -126,8 +126,21 @@ mac_version/
 ├── utils.py            ← format_bytes(), uptime(), safe_execute(), etc.
 ├── config.json         ← Default settings
 ├── requirements.txt    ← pip dependencies
-└── video_script.txt    ← Demo video script
+└── build_mac.sh        ← Automated DMG & PyInstaller build script
 ```
+
+---
+
+## 📦 Building Standalone DMG
+
+To build a standalone `.dmg` installer locally:
+
+```bash
+chmod +x build_mac.sh
+./build_mac.sh
+```
+
+The resulting `TSDP-macOS.dmg` and standalone binary `TSDP-macOS` will be generated in `dist/`.
 
 ---
 

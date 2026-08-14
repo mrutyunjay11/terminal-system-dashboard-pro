@@ -40,5 +40,16 @@ exports/
 *.zip
 __MACOSX/
 
+# ─── Build & Packaging Artifacts ───────────────────────────────────────────────
+build/
+dist/
+*.spec
+*.dmg
+*.exe
+*.bin
+*.tar.gz
+*.pkg
+
 # ─── Personal / Private Files (not for GitHub) ────────────────────────────────
 video_script.txt
+*.pdf
