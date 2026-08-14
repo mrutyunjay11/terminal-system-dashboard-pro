@@ -162,27 +162,8 @@ windows_linux_version/
 ├── config.py           ← AppConfig dataclass & logging setup
 ├── utils.py            ← format_bytes(), uptime(), safe_execute(), etc.
 ├── config.json         ← Default settings
-├── requirements.txt    ← pip dependencies
-├── build_windows.bat   ← Windows PyInstaller EXE build script
-└── build_linux.sh      ← Linux PyInstaller & tarball build script
+└── requirements.txt    ← pip dependencies
 ```
-
----
-
-## 📦 Building Standalone Executables
-
-### 🪟 On Windows:
-```cmd
-build_windows.bat
-```
-Generates `dist\TSDP-Windows.exe`.
-
-### 🐧 On Linux:
-```bash
-chmod +x build_linux.sh
-./build_linux.sh
-```
-Generates `dist/TSDP-Linux` and `dist/TSDP-Linux.tar.gz`.
 
 ---
 

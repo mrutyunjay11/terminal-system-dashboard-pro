@@ -90,18 +90,6 @@ This repository contains two separate versions optimised for each platform:
 
 ---
 
-## 📦 Direct Downloads & Standalone Installers
-
-Don't want to install Python? Download standalone, pre-compiled executables directly from [GitHub Releases](https://github.com/mrutyunjay11/terminal-system-dashboard-pro/releases):
-
-| Operating System | Package Format | Download Link / Instructions |
-|---|---|---|
-| 🍏 **macOS** | Disk Image (`.dmg`) | [**Download TSDP-macOS.dmg**](https://github.com/mrutyunjay11/terminal-system-dashboard-pro/releases/latest) → Mount and run |
-| 🪟 **Windows** | Executable (`.exe` / `.zip`) | [**Download TSDP-Windows.zip**](https://github.com/mrutyunjay11/terminal-system-dashboard-pro/releases/latest) → Extract and run in Windows Terminal |
-| 🐧 **Linux** | Tarball (`.tar.gz`) / Binary | [**Download TSDP-Linux.tar.gz**](https://github.com/mrutyunjay11/terminal-system-dashboard-pro/releases/latest) → `tar -xzf TSDP-Linux.tar.gz && ./TSDP-Linux` |
-
----
-
 ## 🚀 Quick Start
 
 ### 🍎 macOS
