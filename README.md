@@ -18,7 +18,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)]()
 [![CS50P](https://img.shields.io/badge/CS50P-Final%20Project-red)](https://cs50.harvard.edu/python/)
 
-#### Video Demo: `<URL HERE>`
+#### Video Demo: https://www.youtube.com/watch?v=tf_krg3B6gE
 
 </div>
 

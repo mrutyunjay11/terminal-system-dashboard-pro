@@ -2,7 +2,7 @@
 
 > 🔙 [← Back to main README](../README.md)
 
-#### Video Demo: `<URL HERE>`
+#### Video Demo: https://www.youtube.com/watch?v=tf_krg3B6gE
 
 #### Description:
 
